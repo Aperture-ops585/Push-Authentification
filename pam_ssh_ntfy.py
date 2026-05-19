@@ -1,12 +1,24 @@
-#!/usr/bin/env python3
 # python script for ntfy pam authentication, can be enabled by inserting the following line in the pam file:
 # auth     required    pam_exec.so     expose_authtok      /path/to/pam_ssh_ntfy.py
 # Usually after a password login enabling 2FA, i.e @include common-auth
+#!/usr/bin/env python3
 import os
 import sys
 import time
 import uuid
 import json
+
+# Redirect stdout and stderr to /tmp/pam_auth.log for diagnostics
+try:
+    log_file = open("/tmp/pam_auth.log", "a", buffering=1)
+    sys.stdout = log_file
+    sys.stderr = log_file
+    print(f"\n--- PAM EXECUTION START: {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
+    print(f"UID: {os.getuid()}, EUID: {os.geteuid()}")
+    print(f"PAM_USER: {os.getenv('PAM_USER')}, PAM_RHOST: {os.getenv('PAM_RHOST')}, PAM_SERVICE: {os.getenv('PAM_SERVICE')}")
+except Exception as e:
+    pass
+
 import requests
 
 # Import the updated ntfy_auth logic — resolve path relative to this script

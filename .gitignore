@@ -3,5 +3,5 @@ __pycache__/
 *.pyc
 .DS_Store
 WEBAUTHN_GUIDE.md
-NGINX_HELPER.md
+NGINX_HELPER.md 
 venv/
