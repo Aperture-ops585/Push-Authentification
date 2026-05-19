@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biometric Verification</title>
+</head>
+<body style="font-family: sans-serif; margin: 50px auto; max-width: 500px; text-align: center;">
+    <div id="status" style="font-size: 1.2rem; margin-bottom: 20px;">
+        Initializing biometric verification...
+    </div>
+    
+    <button onclick="triggerAuth()" style="font-size: 1rem; padding: 10px 20px; cursor: pointer;">
+        Verify Fingerprint
+    </button>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const reqId = urlParams.get('id');
+        
+        function bufferToBase64url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        function base64urlToBuffer(base64url) {
+            let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            while (base64.length % 4) {
+                base64 += '=';
+            }
+            const binary = atob(base64);
+            const buffer = new ArrayBuffer(binary.length);
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return buffer;
+        }
+
+        async function triggerAuth() {
+            const statusDiv = document.getElementById("status");
+            if (!reqId) {
+                statusDiv.textContent = "Error: Missing request ID";
+                return;
+            }
+
+            try {
+                statusDiv.textContent = "Fetching challenge...";
+                // 1. Fetch challenge
+                const res = await fetch(`/api/auth/options?id=${reqId}`);
+                if (!res.ok) {
+                    throw new Error(await res.text() || "Failed to fetch auth options");
+                }
+                const options = await res.json();
+                
+                options.challenge = base64urlToBuffer(options.challenge);
+                for (let cred of options.allowCredentials) {
+                    cred.id = base64urlToBuffer(cred.id);
+                }
+
+                statusDiv.textContent = "Please touch your fingerprint scanner...";
+
+                // 2. Request biometric signature
+                const assertion = await navigator.credentials.get({
+                    publicKey: options
+                });
+
+                statusDiv.textContent = "Verifying secure token...";
+
+                const assertionPayload = {
+                    id: assertion.id,
+                    rawId: bufferToBase64url(assertion.rawId),
+                    type: assertion.type,
+                    response: {
+                        authenticatorData: bufferToBase64url(assertion.response.authenticatorData),
+                        clientDataJSON: bufferToBase64url(assertion.response.clientDataJSON),
+                        signature: bufferToBase64url(assertion.response.signature),
+                        userHandle: assertion.response.userHandle ? bufferToBase64url(assertion.response.userHandle) : null
+                    }
+                };
+
+                // 3. Submit verification signature
+                const verifyRes = await fetch(`/api/auth/verify?id=${reqId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(assertionPayload)
+                });
+
+                if (verifyRes.ok) {
+                    statusDiv.innerHTML = "<span style='color: green; font-weight: bold;'>Access Approved!</span> Workstation unlocked.";
+                } else {
+                    throw new Error(await verifyRes.text() || "Verification failed");
+                }
+
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerHTML = "<span style='color: red; font-weight: bold;'>Verification Failed:</span> " + err.message;
+            }
+        }
+
+        // Auto-run immediately when page is loaded
+        window.onload = triggerAuth;
+    </script>
+</body>
+</html>

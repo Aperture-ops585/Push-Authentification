@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Enrollment</title>
+</head>
+<body style="font-family: sans-serif; margin: 50px auto; max-width: 500px; text-align: center;">
+    <h1>Enroll Security Device</h1>
+    <p>Register your phone or hardware security key to unlock this workstation securely.</p>
+    <button onclick="registerDevice()" style="font-size: 1rem; padding: 10px 20px; cursor: pointer;">Register Device</button>
+    <div id="status" style="margin-top: 20px; font-weight: bold;"></div>
+
+    <script>
+        function bufferToBase64url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        function base64urlToBuffer(base64url) {
+            let base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+            while (base64.length % 4) {
+                base64 += '=';
+            }
+            const binary = atob(base64);
+            const buffer = new ArrayBuffer(binary.length);
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return buffer;
+        }
+
+        async function registerDevice() {
+            const statusDiv = document.getElementById("status");
+            statusDiv.textContent = "Fetching enrollment options...";
+            statusDiv.style.color = "black";
+
+            try {
+                const res = await fetch("/api/register/options");
+                const options = await res.json();
+                
+                options.challenge = base64urlToBuffer(options.challenge);
+                options.user.id = base64urlToBuffer(options.user.id);
+
+                statusDiv.textContent = "Please touch your fingerprint scanner...";
+                statusDiv.style.color = "blue";
+
+                const credential = await navigator.credentials.create({
+                    publicKey: options
+                });
+
+                statusDiv.textContent = "Verifying with server...";
+                statusDiv.style.color = "black";
+
+                const verifyPayload = {
+                    id: credential.id,
+                    rawId: bufferToBase64url(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        attestationObject: bufferToBase64url(credential.response.attestationObject),
+                        clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+                        transports: credential.response.getTransports ? credential.response.getTransports() : []
+                    }
+                };
+
+                const verifyRes = await fetch("/api/register/verify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(verifyPayload)
+                });
+
+                if (verifyRes.ok) {
+                    statusDiv.textContent = "Device Registered Successfully!";
+                    statusDiv.style.color = "green";
+                } else {
+                    const err = await verifyRes.text();
+                    throw new Error(err || "Verification failed");
+                }
+            } catch (err) {
+                statusDiv.textContent = "Failed: " + err.message;
+                statusDiv.style.color = "red";
+            }
+        }
+    </script>
+</body>
+</html>
